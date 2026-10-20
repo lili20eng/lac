@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LAC Radio Tracks</title>
+<style>
+:root {
+  --bg: #e6e8e3;
+  --surface: #f3f4f0;
+  --ink: #1b2229;
+  --muted: #5c6670;
+  --line: #c4c9c2;
+  --accent: #2b4eff;
+  --on-accent: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151a;
+    --surface: #1a1f26;
+    --ink: #e6e9ee;
+    --muted: #8d97a3;
+    --line: #2b323b;
+    --accent: #8fa4ff;
+    --on-accent: #0f1320;
+  }
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  line-height: 1.5;
+  padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+}
+main { max-width: 560px; margin: 0 auto; padding: 40px 20px 56px; }
+h1 { font-size: 2rem; line-height: 1.15; margin: 0 0 8px; font-weight: 800; letter-spacing: -0.02em; }
+.lead { margin: 0 0 32px; color: var(--muted); }
+ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.id { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em; min-width: 3.2ch; }
+.ext { color: var(--muted); font-size: 0.9rem; }
+.actions { display: flex; gap: 8px; }
+button {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  min-width: 4.5rem;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.status { color: var(--muted); padding: 20px 0; }
+.foot { margin-top: 32px; color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>LAC Radio Tracks</h1>
+  <p class="lead">Music for the Los Angeles Crimes car radio. Tap Copy Link and paste it into the radio.</p>
+  <ul id="list"></ul>
+  <p class="status" id="status">Loading tracks…</p>
+  <p class="foot">Every link points straight to the file, with no redirects.</p>
+</main>
+<script>
+const exts = ["mp3", "ogg", "wav"];
+const base = location.href.replace(/[?#].*$/, "").replace(/[^/]*$/, "");
+const list = document.getElementById("list");
+const status = document.getElementById("status");
+const audio = new Audio();
+let playingBtn = null;
+
+audio.addEventListener("ended", resetPlay);
+
+function resetPlay() {
+  if (playingBtn) playingBtn.textContent = "Play";
+  playingBtn = null;
+}
+
+async function find(n) {
+  const id = "m" + String(n).padStart(2, "0");
+  for (const e of exts) {
+    const url = base + id + "." + e;
+    try {
+      const r = await fetch(url, { method: "HEAD" });
+      if (r.ok) return { id, e, url };
+    } catch (err) {}
+  }
+  return null;
+}
+
+async function copy(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove();
+    return ok;
+  }
+}
+
+function add(t) {
+  const li = document.createElement("li");
+
+  const id = document.createElement("span");
+  id.className = "id";
+  id.textContent = t.id;
+
+  const ext = document.createElement("span");
+  ext.className = "ext";
+  ext.textContent = "." + t.e;
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
+
+  const play = document.createElement("button");
+  play.textContent = "Play";
+  play.addEventListener("click", () => {
+    if (playingBtn === play) {
+      audio.pause();
+      resetPlay();
+      return;
+    }
+    resetPlay();
+    audio.src = t.url;
+    audio.play().then(() => {
+      play.textContent = "Pause";
+      playingBtn = play;
+    }).catch(() => {
+      play.textContent = "Failed";
+      setTimeout(() => { play.textContent = "Play"; }, 1500);
+    });
+  });
+
+  const cp = document.createElement("button");
+  cp.className = "primary";
+  cp.textContent = "Copy Link";
+  cp.addEventListener("click", async () => {
+    const ok = await copy(t.url);
+    cp.textContent = ok ? "Copied" : "Failed";
+    setTimeout(() => { cp.textContent = "Copy Link"; }, 1500);
+  });
+
+  actions.append(play, cp);
+  li.append(id, ext, actions);
+  list.appendChild(li);
+}
+
+async function load() {
+  let misses = 0;
+  for (let n = 1; misses < 3; n++) {
+    const t = await find(n);
+    if (t) {
+      misses = 0;
+      add(t);
+    } else {
+      misses++;
+    }
+  }
+  status.textContent = list.children.length ? "" : "No tracks yet. Upload m01.mp3 to the repo root.";
+}
+
+load();
+</script>
+</body>
+</html>
